@@ -8,30 +8,48 @@ from sqlalchemy import select
 from app.models.users import User as UserModel
 from app.schemas.users import UserCreate, User as UserSchema, RefreshTokenRequest
 from app.db_depends import get_async_db, AsyncSession
-from app.auth import hash_password, verify_password, create_access_token, create_refresh_token
+from app.auth import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    create_refresh_token,
+)
 from app.settings import settings
 
 
-router = APIRouter(
-    prefix="/users",
-    tags=["users"]
-)
+router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_user(
     user: UserCreate,
-    session: Annotated[AsyncSession, Depends(get_async_db)]
+    session: Annotated[AsyncSession, Depends(get_async_db)],
 ) -> UserSchema:
-    result = await session.scalars(select(UserModel).where(UserModel.email == user.email))
+    """
+    Register a new user.
+
+    Args:
+        user: UserCreate object containing email, password, and role.
+
+    Returns:
+        A UserSchema object representing the created user.
+
+    Raises:
+        HTTP 409: If the email is already registered.
+        HTTP 422: If the request body is invalid.
+    """
+    result = await session.scalars(
+        select(UserModel).where(UserModel.email == user.email)
+    )
     if result.first():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
-                            detail="Email already registered")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="email already registered"
+        )
 
     db_user = UserModel(
         email=user.email,
         hashed_password=hash_password(user.password),
-        role=user.role
+        role=user.role,
     )
 
     session.add(db_user)
@@ -42,79 +60,130 @@ async def create_user(
 @router.post("/token")
 async def login(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
-    session: Annotated[AsyncSession, Depends(get_async_db)]
+    session: Annotated[AsyncSession, Depends(get_async_db)],
 ) -> dict[str, str]:
+    """
+    Log in with email and password; returns access and refresh tokens.
 
+    Args:
+        form_data: OAuth2 form with username (email) and password.
+
+    Returns:
+        Dict with access_token, refresh_token, and token_type.
+
+    Raises:
+        HTTP 401: If email or password is incorrect.
+        HTTP 422: If the form data is invalid.
+    """
     user = await session.scalar(
-        select(UserModel)
-        .where(UserModel.email == form_data.username, UserModel.is_active == True))
-    
+        select(UserModel).where(
+            UserModel.email == form_data.username, UserModel.is_active
+        )
+    )
+
     if not user or not verify_password(user.hashed_password, form_data.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"})
-    
+            detail="incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     data = {"sub": user.email, "role": user.role, "id": user.id}
-    access_token, refresh_token = create_access_token(data), create_refresh_token(data)
-    return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+
+    return {
+        "access_token": create_access_token(data),
+        "refresh_token": create_refresh_token(data),
+        "token_type": "bearer",
+    }
 
 
 @router.post("/refresh-token")
 async def get_new_refresh_token(
     session: Annotated[AsyncSession, Depends(get_async_db)],
-    refresh_request: RefreshTokenRequest
+    refresh_request: RefreshTokenRequest,
 ) -> dict[str, str]:
+    """
+    Issue a new refresh token using a valid refresh token.
+
+    Args:
+        refresh_request: Body containing the current refresh_token.
+
+    Returns:
+        Dict with refresh_token and token_type.
+
+    Raises:
+        HTTP 401: If the refresh token is invalid, expired, or user not found.
+    """
     unauthorized_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="could not authorize"
+        status_code=status.HTTP_401_UNAUTHORIZED, detail="could not authorize"
     )
-    
+
     try:
-        payload = jwt.decode(refresh_request.refresh_token, 
-                             settings.secret_key.get_secret_value(), [settings.algorithm])
+        payload = jwt.decode(
+            refresh_request.refresh_token,
+            settings.secret_key.get_secret_value(),
+            [settings.algorithm],
+        )
     except jwt.PyJWTError:
         raise unauthorized_exception
-    
+
     token_type, email = payload.get("token_type"), payload.get("sub")
     if token_type != "refresh" or email is None:
         raise unauthorized_exception
-    
+
     user = await session.scalar(
-        select(UserModel)
-        .where(UserModel.is_active == True, UserModel.email == email)
+        select(UserModel).where(UserModel.is_active, UserModel.email == email)
     )
     if user is None:
         raise unauthorized_exception
-    
-    refresh_token = create_refresh_token({"sub": user.email, "role": user.role, "id": user.id})
+
+    refresh_token = create_refresh_token(
+        {"sub": user.email, "role": user.role, "id": user.id}
+    )
     return {"refresh_token": refresh_token, "token_type": "bearer"}
 
 
 @router.post("/refresh")
 async def refresh_access_token(
     session: Annotated[AsyncSession, Depends(get_async_db)],
-    refresh_request: RefreshTokenRequest
+    refresh_request: RefreshTokenRequest,
 ) -> dict[str, str]:
-    invalid_token_exception = HTTPException(status.HTTP_401_UNAUTHORIZED,
-                                            "could not validate token")
+    """
+    Exchange a valid refresh token for a new access token.
+
+    Args:
+        refresh_request: Body containing the refresh_token.
+
+    Returns:
+        Dict with access_token and token_type.
+
+    Raises:
+        HTTP 401: If the refresh token is invalid, expired, or user not found.
+    """
+    invalid_token_exception = HTTPException(
+        status.HTTP_401_UNAUTHORIZED, "could not validate token"
+    )
 
     try:
-        payload = jwt.decode(refresh_request.refresh_token, settings.secret_key.get_secret_value(),
-                             algorithms=[settings.algorithm])
+        payload = jwt.decode(
+            refresh_request.refresh_token,
+            settings.secret_key.get_secret_value(),
+            algorithms=[settings.algorithm],
+        )
     except jwt.PyJWTError:
         raise invalid_token_exception
-    
+
     email, token_type = payload.get("sub"), payload.get("token_type")
     if email is None or token_type != "refresh":
         raise invalid_token_exception
-    
+
     user = await session.scalar(
-        select(UserModel)
-        .where(UserModel.is_active == True, UserModel.email == email)
+        select(UserModel).where(UserModel.is_active, UserModel.email == email)
     )
     if user is None:
         raise invalid_token_exception
-    
-    access_token = create_access_token({"sub": user.email, "role": user.role, "id": user.id})
+
+    access_token = create_access_token(
+        {"sub": user.email, "role": user.role, "id": user.id}
+    )
     return {"access_token": access_token, "token_type": "bearer"}
