@@ -7,6 +7,7 @@ from app.database import async_session_maker
 from app.services.products import ProductService
 from app.services.reviews import ReviewService
 from app.services.categories import CategoryService
+from app.repository.categories import CategoryRepository
 
 
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
@@ -14,10 +15,16 @@ async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
-def get_category_service(
+def get_category_repository(
     db: Annotated[AsyncSession, Depends(get_async_db)],
+) -> CategoryRepository:
+    return CategoryRepository(db)
+
+
+def get_category_service(
+    category_repository: Annotated[CategoryRepository, Depends(get_category_repository)],
 ) -> CategoryService:
-    return CategoryService(db)
+    return CategoryService(category_repository)
 
 
 def get_product_service(
