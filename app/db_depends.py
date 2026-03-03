@@ -6,6 +6,7 @@ from fastapi import Depends
 from app.database import async_session_maker
 from app.repository.categories import CategoryRepository
 from app.repository.products import ProductRepository
+from app.repository.reviews import ReviewRepository
 from app.services.products import ProductService
 from app.services.reviews import ReviewService
 from app.services.categories import CategoryService
@@ -41,8 +42,14 @@ def get_product_service(
     return ProductService(product_repository, category_service)
 
 
-def get_review_service(
+def get_review_repository(
     db: Annotated[AsyncSession, Depends(get_async_db)],
+) -> ReviewRepository:
+    return ReviewRepository(db)
+
+
+def get_review_service(
+    review_repository: Annotated[ReviewRepository, Depends(get_review_repository)],
     product_service: Annotated[ProductService, Depends(get_product_service)],
 ) -> ReviewService:
-    return ReviewService(db, product_service)
+    return ReviewService(review_repository, product_service)
