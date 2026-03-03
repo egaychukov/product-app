@@ -23,5 +23,6 @@ class Product(BaseModel):
     is_active: bool
     category_id: int
     rating: Annotated[Decimal, Field(max_digits=3, decimal_places=2)]
+    seller_id: int
 
     model_config = ConfigDict(from_attributes=True)

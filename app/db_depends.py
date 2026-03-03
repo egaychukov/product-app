@@ -4,10 +4,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 
 from app.database import async_session_maker
+from app.repository.categories import CategoryRepository
+from app.repository.products import ProductRepository
 from app.services.products import ProductService
 from app.services.reviews import ReviewService
 from app.services.categories import CategoryService
-from app.repository.categories import CategoryRepository
 
 
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
@@ -27,11 +28,17 @@ def get_category_service(
     return CategoryService(category_repository)
 
 
-def get_product_service(
+def get_product_repository(
     db: Annotated[AsyncSession, Depends(get_async_db)],
+) -> ProductRepository:
+    return ProductRepository(db)
+
+
+def get_product_service(
+    product_repository: Annotated[ProductRepository, Depends(get_product_repository)],
     category_service: Annotated[CategoryService, Depends(get_category_service)],
 ) -> ProductService:
-    return ProductService(db, category_service)
+    return ProductService(product_repository, category_service)
 
 
 def get_review_service(
