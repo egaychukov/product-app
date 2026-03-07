@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, status, Depends
+from fastapi import APIRouter, status, Depends, Query
 
 from app.enums import Role
 from app.db_depends import get_product_service
@@ -9,22 +9,29 @@ from app.schemas.users import User as UserSchema
 from app.schemas.reviews import Review as ReviewSchema
 from app.auth import get_current_role
 from app.services.products import ProductService
+from app.schemas.pagination import Page
 
 
 router = APIRouter(prefix="/products", tags=["products"])
 
 
 @router.get("/")
-async def get_all_products(
+async def get_products(
     product_service: Annotated[ProductService, Depends(get_product_service)],
-) -> list[ProductSchema]:
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> Page[ProductSchema]:
     """
-    Get all active products.
+    Get a page of active products defined by the pagination parameters.
+
+    Args:
+        page: Number (not index) of the requested page.
+        page_size: Length of the requested page.
 
     Returns:
-        A list of ProductSchema objects representing all active products.
+        A page of ProductSchema objects representing active products.
     """
-    return await product_service.get_all_products()
+    return await product_service.get_products(page, page_size)
 
 
 @router.get("/{product_id}")

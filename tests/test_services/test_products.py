@@ -9,6 +9,7 @@ from app.enums import Role
 from app.schemas.products import Product as ProductSchema, ProductCreate
 from app.schemas.users import User as UserSchema
 from app.schemas.reviews import Review as ReviewSchema
+from app.schemas.pagination import Page
 from app.services.products import ProductService
 
 
@@ -97,22 +98,34 @@ async def test_get_product_not_found_raises(mocker: MockFixture):
         ),
     ],
 )
-async def test_get_all_products_success(
+async def test_get_products_success(
     expected_products: list[ProductSchema], mocker: MockFixture
 ):
     # arrange
+    expected_page = Page(
+        items=expected_products, total=100, page=2, page_size=10
+    )
+
     mock_repository = mocker.MagicMock()
-    mock_repository.get_all_products = mocker.AsyncMock(return_value=expected_products)
+    mock_repository.get_products = mocker.AsyncMock(return_value=expected_page.items)
+    mock_repository.get_active_product_count = mocker.AsyncMock(
+        return_value=expected_page.total
+    )
     mock_category_service = mocker.MagicMock()
 
     product_service = ProductService(mock_repository, mock_category_service)
 
     # act
-    actual_products = await product_service.get_all_products()
+    actual_page = await product_service.get_products(
+        expected_page.page, expected_page.page_size
+    )
 
     # assert
-    assert actual_products == expected_products
-    mock_repository.get_all_products.assert_awaited_once()
+    mock_repository.get_products.assert_awaited_once_with(
+        expected_page.page, expected_page.page_size
+    )
+    mock_repository.get_active_product_count.assert_awaited_once()
+    assert actual_page == expected_page
 
 
 @pytest.mark.asyncio
@@ -199,7 +212,7 @@ async def test_get_rating_with_existing_rating(mocker: MockFixture):
 async def test_get_rating_with_no_reviews_returns_zero(mocker: MockFixture):
     # arrange
     product_id = 1
-    
+
     mock_repository = mocker.MagicMock()
     mock_repository.get_rating = mocker.AsyncMock(return_value=None)
     mock_category_service = mocker.MagicMock()
@@ -281,7 +294,9 @@ async def test_get_product_reviews_product_not_found(mocker: MockFixture):
 async def test_create_product_success(mocker: MockFixture):
     # arrange
     category_id = 1
-    seller = UserSchema(id=1, email="seller@example.com", is_active=True, role=Role.SELLER)
+    seller = UserSchema(
+        id=1, email="seller@example.com", is_active=True, role=Role.SELLER
+    )
     product_create = ProductCreate(
         name="prod",
         description=None,
@@ -323,7 +338,9 @@ async def test_create_product_success(mocker: MockFixture):
 async def test_create_product_category_not_found(mocker: MockFixture):
     # arrange
     category_id = 1
-    seller = UserSchema(id=1, email="seller@example.com", is_active=True, role=Role.SELLER)
+    seller = UserSchema(
+        id=1, email="seller@example.com", is_active=True, role=Role.SELLER
+    )
     product_create = ProductCreate(
         name="prod",
         description=None,
@@ -355,7 +372,9 @@ async def test_create_product_category_not_found(mocker: MockFixture):
 async def test_delete_product_success(mocker: MockFixture):
     # arrange
     product_id = 1
-    seller = UserSchema(id=1, email="seller@example.com", is_active=True, role=Role.SELLER)
+    seller = UserSchema(
+        id=1, email="seller@example.com", is_active=True, role=Role.SELLER
+    )
     expected_product = ProductSchema(
         id=product_id,
         name="prod",
@@ -390,7 +409,9 @@ async def test_delete_product_forbidden_for_non_owner(mocker: MockFixture):
     # arrange
     product_id = 1
     owner = 1
-    current_user = UserSchema(id=2, email="user@example.com", is_active=True, role=Role.SELLER)
+    current_user = UserSchema(
+        id=2, email="user@example.com", is_active=True, role=Role.SELLER
+    )
     product = ProductSchema(
         id=product_id,
         name="prod",
@@ -424,7 +445,9 @@ async def test_delete_product_forbidden_for_non_owner(mocker: MockFixture):
 async def test_delete_product_not_found(mocker: MockFixture):
     # arrange
     product_id = 1
-    current_user = UserSchema(id=1, email="user@example.com", is_active=True, role=Role.SELLER)
+    current_user = UserSchema(
+        id=1, email="user@example.com", is_active=True, role=Role.SELLER
+    )
 
     mock_repository = mocker.MagicMock()
     mock_repository.get_product = mocker.AsyncMock(return_value=None)
@@ -447,7 +470,9 @@ async def test_update_product_success(mocker: MockFixture):
     # arrange
     product_id = 1
     new_category_id = 2
-    seller = UserSchema(id=1, email="seller@example.com", is_active=True, role=Role.SELLER)
+    seller = UserSchema(
+        id=1, email="seller@example.com", is_active=True, role=Role.SELLER
+    )
     product = ProductSchema(
         id=product_id,
         name="prod",
@@ -468,7 +493,9 @@ async def test_update_product_success(mocker: MockFixture):
         stock=10,
         category_id=new_category_id,
     )
-    updated_product = product.model_copy(update={"name": product_update.name, "category_id": new_category_id})
+    updated_product = product.model_copy(
+        update={"name": product_update.name, "category_id": new_category_id}
+    )
 
     mock_repository = mocker.MagicMock()
     mock_repository.get_product = mocker.AsyncMock(return_value=product)
@@ -495,7 +522,9 @@ async def test_update_product_forbidden_for_non_owner(mocker: MockFixture):
     # arrange
     product_id = 1
     owner = 1
-    current_user = UserSchema(id=2, email="user@example.com", is_active=True, role=Role.SELLER)
+    current_user = UserSchema(
+        id=2, email="user@example.com", is_active=True, role=Role.SELLER
+    )
     product = ProductSchema(
         id=product_id,
         name="prod",
@@ -539,7 +568,9 @@ async def test_update_product_forbidden_for_non_owner(mocker: MockFixture):
 async def test_update_product_not_found(mocker: MockFixture):
     # arrange
     product_id = 1
-    current_user = UserSchema(id=1, email="user@example.com", is_active=True, role=Role.SELLER)
+    current_user = UserSchema(
+        id=1, email="user@example.com", is_active=True, role=Role.SELLER
+    )
     product_update = ProductCreate(
         name="new-name",
         description="new-desc",
@@ -572,7 +603,9 @@ async def test_update_product_category_not_found(mocker: MockFixture):
     # arrange
     product_id = 1
     new_category_id = 2
-    seller = UserSchema(id=1, email="seller@example.com", is_active=True, role=Role.SELLER)
+    seller = UserSchema(
+        id=1, email="seller@example.com", is_active=True, role=Role.SELLER
+    )
     product = ProductSchema(
         id=product_id,
         name="prod",
