@@ -19,9 +19,13 @@ class ProductRepository:
 
         return ProductSchema.model_validate(product) if product else None
 
-    async def get_all_products(self) -> list[ProductSchema]:
+    async def get_products(self, page: int, page_size: int) -> list[ProductSchema]:
         result = await self.db.scalars(
-            select(ProductModel).where(ProductModel.is_active)
+            select(ProductModel)
+            .where(ProductModel.is_active)
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .order_by(ProductModel.id)
         )
 
         return [ProductSchema.model_validate(product) for product in result.all()]
@@ -34,6 +38,15 @@ class ProductRepository:
         )
 
         return [ProductSchema.model_validate(product) for product in result.all()]
+
+    async def get_active_product_count(self) -> int:
+        count = await self.db.scalar(
+            select(func.count("*"))
+            .select_from(ProductModel)
+            .where(ProductModel.is_active)
+        )
+
+        return count or 0
 
     async def get_rating(self, product_id: int) -> Decimal | None:
         return await self.db.scalar(
@@ -63,7 +76,7 @@ class ProductRepository:
         product_to_delete = await self._get_model(product_id)
         if product_to_delete is None:
             return None
-        
+
         product_reviews = await self._get_product_review_models(product_id)
         for review in product_reviews:
             review.is_active = False
@@ -73,7 +86,9 @@ class ProductRepository:
         await self.db.commit()
         return ProductSchema.model_validate(product_to_delete)
 
-    async def update_product(self, product_id: int, product_create: ProductCreate) -> ProductSchema | None:
+    async def update_product(
+        self, product_id: int, product_create: ProductCreate
+    ) -> ProductSchema | None:
         product_to_update = await self._get_model(product_id)
         if product_to_update is None:
             return None

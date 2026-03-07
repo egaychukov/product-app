@@ -1,3 +1,4 @@
+import asyncio
 from decimal import Decimal
 
 from app import exceptions
@@ -6,6 +7,7 @@ from app.schemas.reviews import Review as ReviewSchema
 from app.schemas.users import User
 from app.repository.products import ProductRepository
 from app.services.categories import CategoryService
+from app.schemas.pagination import Page
 
 
 class ProductService:
@@ -22,8 +24,11 @@ class ProductService:
 
         return product
 
-    async def get_all_products(self) -> list[ProductSchema]:
-        return await self.product_repository.get_all_products()
+    async def get_products(self, page: int, page_size: int) -> Page[ProductSchema]:
+        items = await self.product_repository.get_products(page, page_size)
+        total = await self.product_repository.get_active_product_count()
+
+        return Page(items=items, total=total, page=page, page_size=page_size)
 
     async def get_category_products(self, category_id: int) -> list[ProductSchema]:
         await self.category_service.get_category(category_id)
